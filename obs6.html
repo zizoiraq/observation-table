@@ -49,14 +49,27 @@
     .subhead{margin:10px 0 6px;font-weight:800}
     .list{margin:0;padding-inline-start:18px}
     .list li{margin:4px 0}
+    .id-ltr{direction:ltr;unicode-bidi:bidi-override}
+
+    /* ترويسة الجامعة */
+    .uni{display:flex;flex-direction:column;gap:2px}
+    .uni .line{font-weight:800;letter-spacing:.2px}
+    .uni .designed{font-weight:700;opacity:.85;font-size:14px;margin-top:4px}
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>مولّد جداول المراقبات</h1>
+      <div class="uni">
+        <div class="line">Northern Technical University</div>
+        <div class="line">Technical Engineering College - Mosul</div>
+        <div class="line">Chemical and Petroleum Industries Technologies Engineering</div>
+        <div class="designed">Designed by: Azam Isam and Hiba Abdulkareem</div>
+      </div>
       <span class="badge">إدخال بالأعداد فقط • يعمل بلا إنترنت</span>
     </header>
+
+    <h1 style="margin-bottom:8px">مولّد جداول المراقبات</h1>
 
     <div class="grid">
       <!-- يسار: الإعدادات العامة -->
@@ -91,9 +104,10 @@
         </div>
         <div class="controls">
           <button class="btn" id="generate">توليد الجدول</button>
-          <button class="btn-outline" id="exportCSV">تصدير CSV</button>
+          <button class="btn-outline" id="exportCSV">تصدير CSV (الجدول)</button>
           <button class="btn" id="exportExcel">تنزيل ملف Excel</button>
           <button class="btn-outline" id="exportRepeats">تصدير تقرير التكرارات CSV</button>
+          <button class="btn-outline" id="exportStatsCSV">تصدير CSV للإحصائية</button>
         </div>
         <div class="small">إن لم يظهر زر Excel فالمتصفّح منع تحميل المكتبة من الإنترنت، ويمكنك استخدام CSV.</div>
       </section>
@@ -118,6 +132,9 @@
   const $ = (s)=>document.querySelector(s);
   const byId = (id)=>document.getElementById(id);
   const pairKey=(a,b)=>{const t=[a,b].sort((x,y)=> x.localeCompare(y,'ar'));return t[0]+' | '+t[1]};
+  // فرض الاتجاه لليسار في المُعرّفات مثل A10/B3 لمنع ظهور ":" في إكسل
+  const LRM='\u200E';
+  const ltr=(s)=> LRM + String(s);
 
   // الحالة العامة
   window.state={days:0,r2:0,r3:0,r4:0,reserves:0,avoidConsecutive:true,avoidPairs:true,avoidSameRoom:true,monitors:[],cats:{A:[],B:[],C:[],D:[]},targets:{A:0,B:0,C:0,D:0},schedule:[],pairings:new Map()};
@@ -168,13 +185,15 @@
     const deficit=Math.max(0,m.target-m.count); sc -= 0.08*deficit; return sc; }
 
   const pick=(pool,day,roomMembers,curRoomId)=>{ let best=null,bs=Infinity; for(const m of pool){ const sc=score(m,day,roomMembers,curRoomId); if(sc<bs){bs=sc;best=m;} } return best };
-  const shuffle=a=>{ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a };
+  // const shuffle=a=>{ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a };
 
   window.assign=function(){
     const s=window.state; s.schedule=[]; s.pairings=new Map();
     const buildRooms=()=>{ const rooms=[]; let i=1; for(let k=0;k<s.r2;k++) rooms.push({id:`قاعة ${i++}`,capacity:2}); for(let k=0;k<s.r3;k++) rooms.push({id:`قاعة ${i++}`,capacity:3}); for(let k=0;k<s.r4;k++) rooms.push({id:`قاعة ${i++}`,capacity:4}); return rooms };
     for(let day=1; day<=s.days; day++){
-      const rooms=shuffle(buildRooms()); const plan={day,rooms:[],reserves:[],warnings:[]};
+      // تسلسل القاعات بالعرض (بدون خلط)
+      const rooms=buildRooms();
+      const plan={day,rooms:[],reserves:[],warnings:[]};
       for(const R of rooms){ const room={id:R.id,capacity:R.capacity,members:[],manager:null,notes:[]};
         const AB=s.monitors.filter(m=> (m.cat==='A'||m.cat==='B') && !m.assigned.some(a=>a.day===day));
         const Aonly=AB.filter(m=>m.cat==='A'), Bonly=AB.filter(m=>m.cat==='B');
@@ -236,17 +255,36 @@
     return {sameRoom,repeatedPairs,stats};
   }
 
+  function byCatOrder(arr){
+    const order=['A','B','C','D'];
+    return arr.slice().sort((a,b)=>{
+      const ac=order.indexOf(a.cat), bc=order.indexOf(b.cat);
+      if(ac!==bc) return ac-bc;
+      const an=parseInt(a.name.slice(1))||0; const bn=parseInt(b.name.slice(1))||0;
+      if(an!==bn) return an-bn;
+      return a.name.localeCompare(b.name,'ar');
+    });
+  }
+
   window.render=function(){
     const s=window.state; const sched=$('#schedule'); const warnBox=$('#warnings'); const statsBox=$('#stats'); const repBox=$('#repeats');
     sched.innerHTML=''; warnBox.innerHTML=''; statsBox.innerHTML=''; repBox.innerHTML='';
 
     const warnings=[]; for(const dp of s.schedule){ if(dp.warnings.length) warnings.push(...dp.warnings.map(w=>`اليوم ${dp.day}: ${w}`)); for(const room of dp.rooms){ if(room.notes.length) warnings.push(...room.notes.map(n=>`اليوم ${dp.day} • ${room.id}: ${n}`)); } } warnBox.innerHTML = warnings.length? warnings.map(w=>`<div class="warn">${w}</div>`).join('') : '<div class="ok">✅ تم إنشاء جدول يراعي الشروط قدر الإمكان.</div>';
 
-    for(const dp of s.schedule){ const dayEl=document.createElement('div'); dayEl.className='day'; dayEl.innerHTML=`<h3>اليوم ${dp.day}</h3>`; for(const room of dp.rooms){ const members=room.members.map(m=>`<span class="chip ${m.cat}">${m.name}</span>`).join(' '); const notes=room.notes.length? `<div class="warn">${room.notes.join('<br>')}</div>`:''; const el=document.createElement('div'); el.className='room'; el.innerHTML=`<div class="room-header"><div><b>${room.id}</b> • <span class="small">سعة ${room.capacity}</span></div><div class="small">👑 المدير: ${room.manager? room.manager.name:'—'}</div></div><div class="chips">${members}</div>${notes}`; dayEl.appendChild(el);} const resNames=dp.reserves.map(m=>m.name).join(' • ')||'—'; const res=document.createElement('div'); res.className='room'; res.innerHTML=`<div class="room-header"><div><b>الاحتياط</b></div><div class="small">${resNames}</div></div>`; dayEl.appendChild(res); sched.appendChild(dayEl);}    
+    for(const dp of s.schedule){ const dayEl=document.createElement('div'); dayEl.className='day'; dayEl.innerHTML=`<h3>اليوم ${dp.day}</h3>`; for(const room of dp.rooms){ const members=room.members.map(m=>`<span class="chip ${m.cat}">${m.name}</span>`).join(' '); const notes=room.notes.length? `<div class="warn">${room.notes.join('<br>')}</div>`:''; const el=document.createElement('div'); el.className='room'; el.innerHTML=`<div class="room-header"><div><b>${room.id}</b> • <span class="small">سعة ${room.capacity}</span></div><div class="small">👑 المدير: ${room.manager? ltr(room.manager.name) : '—'}</div></div><div class="chips">${members}</div>${notes}`; dayEl.appendChild(el);} const resNames=dp.reserves.map(m=>ltr(m.name)).join(' • ')||'—'; const res=document.createElement('div'); res.className='room'; res.innerHTML=`<div class="room-header"><div><b>الاحتياط</b></div><div class="small">${resNames}</div></div>`; dayEl.appendChild(res); sched.appendChild(dayEl);}    
 
-    const rows=[]; for(const m of s.monitors){ const items=m.assigned.map(a=> a.type==='room'? `يوم ${a.day} – ${a.roomId}` : `يوم ${a.day} – احتياط`); rows.push({name:m.name,cat:m.cat,count:m.count,details:items.join(' | ')}); } rows.sort((a,b)=> b.count - a.count || a.cat.localeCompare(b.cat,'ar') || a.name.localeCompare(b.name,'ar'));
-    const table=document.createElement('table'); table.className='stats-table'; table.innerHTML=`<thead><tr><th>المعرف</th><th>الصنف</th><th>عدد التكليفات</th><th>التفاصيل</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.name}</td><td>${r.cat}</td><td>${r.count}</td><td>${r.details||'—'}</td></tr>`).join('')}</tbody>`; statsBox.appendChild(table);
-    const maxC = rows.length? Math.max(...rows.map(r=>r.count)) : 0; const minC = rows.length? Math.min(...rows.map(r=>r.count)) : 0; const top  = rows.filter(r=>r.count===maxC).map(r=>r.name).slice(0,5).join('، '); const low  = rows.filter(r=>r.count===minC).map(r=>r.name).slice(0,5).join('، ');
+    // ترتيب الإحصائية: A1..Aend ثم B1.. ثم C.. ثم D..
+    const monsOrdered = byCatOrder(s.monitors);
+    const rows = monsOrdered.map(m=>{
+      const items=m.assigned.map(a=> a.type==='room'? `يوم ${a.day} – ${a.roomId}` : `يوم ${a.day} – احتياط`);
+      return {name:m.name,cat:m.cat,count:m.count,details:items.join(' | ')};
+    });
+
+    const table=document.createElement('table'); table.className='stats-table'; table.innerHTML=`<thead><tr><th>المعرف</th><th>الصنف</th><th>عدد التكليفات</th><th>التفاصيل</th></tr></thead><tbody>${rows.map(r=>`<tr><td><span class="id-ltr">${r.name}</span></td><td>${r.cat}</td><td>${r.count}</td><td>${r.details||'—'}</td></tr>`).join('')}</tbody>`; statsBox.appendChild(table);
+
+    const counts = rows.map(r=>r.count);
+    const maxC = counts.length? Math.max(...counts) : 0; const minC = counts.length? Math.min(...counts) : 0; const top  = rows.filter(r=>r.count===maxC).map(r=>r.name).slice(0,5).join('، '); const low  = rows.filter(r=>r.count===minC).map(r=>r.name).slice(0,5).join('، ');
     const summary=document.createElement('div'); summary.className='small'; summary.innerHTML=`أكثر عدد مراقبات: <b>${maxC}</b> للمراقب(ين): ${top||'—'} • أقل عدد مراقبات: <b>${minC}</b> للمراقب(ين): ${low||'—'}`; statsBox.appendChild(summary);
 
     // ====== تحليل التكرارات ======
@@ -292,16 +330,16 @@
     for(const dp of s.schedule){
       for(const room of dp.rooms){
         const members=room.members.map(m=>m.name);
-        const team=members.filter(n=> room.manager? (n !== room.manager.name) : true).join('، ');
-        sheet1.push([`اليوم ${dp.day}`,room.id,room.capacity,room.manager? room.manager.name : '—', team||'—', room.notes.join(' | ')]);
+        const team=members.filter(n=> room.manager? (n !== room.manager.name) : true).map(ltr).join('، ');
+        sheet1.push([`اليوم ${dp.day}`,room.id,room.capacity,room.manager? ltr(room.manager.name) : '—', team||'—', room.notes.join(' | ')]);
       }
-      sheet1.push([`اليوم ${dp.day}`,'الاحتياط',s.reserves,'—', (dp.reserves.map(m=>m.name).join('، ')||'—'), dp.warnings.join(' | ')]);
+      sheet1.push([`اليوم ${dp.day}`,'الاحتياط',s.reserves,'—', (dp.reserves.map(m=>ltr(m.name)).join('، ')||'—'), dp.warnings.join(' | ')]);
     }
     const ws1=XLSX.utils.aoa_to_sheet(sheet1); XLSX.utils.book_append_sheet(wb,ws1,'الجدول');
 
     const sheet2=[["المعرف","الصنف","عدد التكليفات","الأيام/القاعات"]];
-    const mons=[...s.monitors].sort((a,b)=> a.cat.localeCompare(b.cat,'ar')||a.name.localeCompare(b.name,'ar'));
-    for(const m of mons){ const details=m.assigned.map(a=> a.type==='room'? `يوم ${a.day} – ${a.roomId}` : `يوم ${a.day} – احتياط`).join(' | '); sheet2.push([m.name,m.cat,m.count,details]); }
+    const monsOrdered = byCatOrder(s.monitors);
+    for(const m of monsOrdered){ const details=m.assigned.map(a=> a.type==='room'? `يوم ${a.day} – ${a.roomId}` : `يوم ${a.day} – احتياط`).join(' | '); sheet2.push([ltr(m.name),m.cat,m.count,details]); }
     const ws2=XLSX.utils.aoa_to_sheet(sheet2); XLSX.utils.book_append_sheet(wb,ws2,'إحصائية');
 
     // ورقة للتكرارات
@@ -309,12 +347,14 @@
     const sheet3=[["نوع","حقل 1","حقل 2","عدد","تفاصيل"]];
     for(const x of sameRoom){ sheet3.push(['تكرار قاعة',x.name,x.roomId,x.days.length,`الأيام: ${x.days.join('، ')}`]); }
     for(const p of repeatedPairs){ sheet3.push(['ثنائية مكررة',p.pair.split(' | ')[0],p.pair.split(' | ')[1],p.days.length,`الأيام: ${p.days.join('، ')}`]); }
-    sheet3.push(['ملخص','إجمالي الثنائيات','—',stats.totalPairs,`مكرر: ${stats.repeatedPairsCount} (${(stats.repeatedRatio*100).toFixed(1)}%)`]);
+    sheet3.push(['ملخص','إجمالي الثنائيات','—',stats.totalPairs,`مكرر: ${p(repeatedPairs.length)} من ${p(stats.totalPairs)} (${(stats.repeatedRatio*100).toFixed(1)}%)`]);
     const ws3=XLSX.utils.aoa_to_sheet(sheet3); XLSX.utils.book_append_sheet(wb,ws3,'التكرارات');
 
     const out = XLSX.write(wb, {bookType:'xlsx', type:'array'});
     const blob = new Blob([out], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     saveFile(blob, `جدول_المراقبات_${new Date().toISOString().slice(0,10)}.xlsx`);
+
+    function p(n){return new Intl.NumberFormat('ar-IQ').format(n)}
   }
 
   window.exportCSV=function(){
@@ -323,17 +363,33 @@
     for(const dp of s.schedule){
       for(const room of dp.rooms){
         const members=room.members.map(m=>m.name);
-        const team=members.filter(n=> room.manager? (n !== room.manager.name) : true).join('؛ ');
-        const row=[`اليوم ${dp.day}`,room.id,room.capacity,(room.manager? room.manager.name : '—'),(team||'—'), room.notes.join(' | ')].map(v=> '"'+String(v).replace(/"/g,'""')+'"').join(',');
+        const team=members.filter(n=> room.manager? (n !== room.manager.name) : true).map(ltr).join('؛ ');
+        const row=[`اليوم ${dp.day}`,room.id,room.capacity,(room.manager? ltr(room.manager.name) : '—'),(team||'—'), room.notes.join(' | ')].map(v=> '"'+String(v).replace(/"/g,'""')+'"').join(',');
         lines.push(row);
       }
-      const resRow=[`اليوم ${dp.day}`,'الاحتياط',s.reserves,'—',(dp.reserves.map(m=>m.name).join('؛ ')||'—'), dp.warnings.join(' | ')].map(v=> '"'+String(v).replace(/"/g,'""')+'"').join(',');
+      const resRow=[`اليوم ${dp.day}`,'الاحتياط',s.reserves,'—',(dp.reserves.map(m=>ltr(m.name)).join('؛ ')||'—'), dp.warnings.join(' | ')].map(v=> '"'+String(v).replace(/"/g,'""')+'"').join(',');
       lines.push(resRow);
     }
     const bom='\uFEFF';
     const csv = bom + lines.join('\r\n');
     const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
     saveFile(blob, `جدول_المراقبات_${new Date().toISOString().slice(0,10)}.csv`);
+  }
+
+  // CSV منفصل لإحصائية المراقبين بالترتيب A1.. ثم B.. ثم C.. ثم D..
+  window.exportStatsCSV=function(){
+    const s=window.state; if(!s.schedule.length){alert('لم يتم إنشاء جدول بعد.');return;}
+    const monsOrdered = byCatOrder(s.monitors);
+    const lines=[["المعرف","الصنف","عدد التكليفات","الأيام/القاعات"].join(',')];
+    for(const m of monsOrdered){
+      const details=m.assigned.map(a=> a.type==='room'? `يوم ${a.day} – ${a.roomId}` : `يوم ${a.day} – احتياط`).join(' | ');
+      const row=[ltr(m.name),m.cat,m.count,details||'—'].map(v=> '"'+String(v).replace(/"/g,'""')+'"').join(',');
+      lines.push(row);
+    }
+    const bom='\uFEFF';
+    const csv = bom + lines.join('\r\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    saveFile(blob, `احصائية_المراقبين_${new Date().toISOString().slice(0,10)}.csv`);
   }
 
   window.exportRepeats=function(){
@@ -360,6 +416,7 @@
   byId('exportExcel').addEventListener('click', ()=>{ try{ exportExcel(); }catch(e){ alert('تعذّر التصدير: '+(e&&e.message?e.message:e)); }});
   byId('exportCSV').addEventListener('click', ()=>{ try{ exportCSV(); }catch(e){ alert('تعذّر التصدير: '+(e&&e.message?e.message:e)); }});
   byId('exportRepeats').addEventListener('click', ()=>{ try{ exportRepeats(); }catch(e){ alert('تعذّر تصدير التكرارات: '+(e&&e.message?e.message:e)); }});
+  byId('exportStatsCSV').addEventListener('click', ()=>{ try{ exportStatsCSV(); }catch(e){ alert('تعذّر تصدير الإحصائية: '+(e&&e.message?e.message:e)); }});
 
   // إخفاء زر إكسل إذا المكتبة غير متاحة
   setTimeout(()=>{ if(!window.XLSX || document.documentElement.dataset.noxlsx){ const btn=document.getElementById('exportExcel'); if(btn) btn.style.display='none'; } }, 800);
